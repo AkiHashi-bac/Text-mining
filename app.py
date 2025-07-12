@@ -1,83 +1,84 @@
-#-*- coding: utf-8 -*-
+import io
+import pandas as pd
+import streamlit as st
+from collections import Counter
+from wordcloud import WordCloud
+from sklearn.datasets import fetch_20newsgroups
+from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+import matplotlib.pyplot as plt
 
-import MeCab
+# ページのレイアウトを設定
+st.set_page_config(
+    page_title="テキスト可視化",
+    layout="wide", # wideにすると横長なレイアウトに
+    initial_sidebar_state="expanded"
+)
 
-# With MeCab original dictionary
-# MeCab のデフォルト辞書で
-mecab_tagger = MeCab.Tagger('')
-# To specify dictionary use:
-# 特定の辞書を使う場合：
-# mecab_tagger = MeCab.Tagger('-d /usr/local/lib/mecab/dic/ipadic')
-# change path to where dictionary is
-# 辞書があるパスに当然変えること
+# タイトルの設定
+st.title("テキスト可視化")
+st.markdown("""
+テキストの文章を読み込ませると、スペースごとに文字を分割し、出現頻度を集計します
+""")
 
-text = 'これは日本語の形態素解析のテストです。動詞の形も一般化できるようになっています。'
-parsed = [[chunk.split('\t')[0], tuple(chunk.split('\t')[1].split(','))] for chunk in mecab_tagger.parse(text).splitlines()[:-1]]
-lemmatized = [i[1][6] for i in parsed]
-# parsed --> [[surface, feature] for word in text]
-# surface = 'surface'
-# feature = ('part-of-speech,sub-class 1,sub-class 2,sub-class 3,inflection,conjugation,root-form,reading,pronunciation')
-# 特徴 = ('品詞,品詞細分類1,品詞細分類2,品詞細分類3,活用型,活用形,原形,読み,発音')
+# サイドバーにアップロードファイルのウィジェットを表示
+st.sidebar.markdown("# ファイルアップロード")
+uploaded_file = st.sidebar.file_uploader(
+    "テキストファイルをアップロードしてください", type="txt"
+)
 
-# >>> for i in parsed: print(i)
-# ...
-# ['これ', ('名詞', '代名詞', '一般', '*', '*', '*', 'これ', 'コレ', 'コレ')]
-# ['は', ('助詞', '係助詞', '*', '*', '*', '*', 'は', 'ハ', 'ワ')]
-# ['日本語', ('名詞', '一般', '*', '*', '*', '*', '日本語', 'ニホンゴ', 'ニホンゴ')]
-# ['の', ('助詞', '連体化', '*', '*', '*', '*', 'の', 'ノ', 'ノ')]
-# ['形態素', ('名詞', '一般', '*', '*', '*', '*', '形態素', 'ケイタイソ', 'ケイタイソ')]
-# ['解析', ('名詞', 'サ変接続', '*', '*', '*', '*', '解析', 'カイセキ', 'カイセキ')]
-# ['の', ('助詞', '連体化', '*', '*', '*', '*', 'の', 'ノ', 'ノ')]
-# ['テスト', ('名詞', 'サ変接続', '*', '*', '*', '*', 'テスト', 'テスト', 'テスト')]
-# ['です', ('助動詞', '*', '*', '*', '特殊・デス', '基本形', 'です', 'デス', 'デス')]
-# ['。', ('記号', '句点', '*', '*', '*', '*', '。', '。', '。')]
-# ['動詞', ('名詞', '一般', '*', '*', '*', '*', '動詞', 'ドウシ', 'ドーシ')]
-# ['の', ('助詞', '連体化', '*', '*', '*', '*', 'の', 'ノ', 'ノ')]
-# ['形', ('名詞', '一般', '*', '*', '*', '*', '形', 'カタチ', 'カタチ')]
-# ['も', ('助詞', '係助詞', '*', '*', '*', '*', 'も', 'モ', 'モ')]
-# ['一般', ('名詞', '一般', '*', '*', '*', '*', '一般', 'イッパン', 'イッパン')]
-# ['化', ('名詞', '接尾', 'サ変接続', '*', '*', '*', '化', 'カ', 'カ')]
-# ['できる', ('動詞', '自立', '*', '*', '一段', '基本形', 'できる', 'デキル', 'デキル')]
-# ['よう', ('名詞', '非自立', '助動詞語幹', '*', '*', '*', 'よう', 'ヨウ', 'ヨー')]
-# ['に', ('助詞', '格助詞', '一般', '*', '*', '*', 'に', 'ニ', 'ニ')]
-# ['なっ', ('動詞', '自立', '*', '*', '五段・ラ行', '連用タ接続', 'なる', 'ナッ', 'ナッ')]
-# ['て', ('助詞', '接続助詞', '*', '*', '*', '*', 'て', 'テ', 'テ')]
-# ['い', ('動詞', '非自立', '*', '*', '一段', '連用形', 'いる', 'イ', 'イ')]
-# ['ます', ('助動詞', '*', '*', '*', '特殊・マス', '基本形', 'ます', 'マス', 'マス')]
-# ['。', ('記号', '句点', '*', '*', '*', '*', '。', '。', '。')]
+if uploaded_file is not None:
+    # テキストファイルの読み込み
+    text_data = uploaded_file.read().decode('utf-8')
+    
+    # データフレームの作成
+    data = {'text': text_data.split('\n'), 'label': ['']*len(text_data.split('\n'))}
+    df = pd.DataFrame(data)
+    
+    # データの表示
+    st.write("データフレーム:")
+    st.write(df)
+    
+    # テキストの前処理
+    count_vect = CountVectorizer()
+    X_train_counts = count_vect.fit_transform(df['text'])
+    tfidf_transformer = TfidfTransformer()
+    X_train_tfidf = tfidf_transformer.fit_transform(X_train_counts)
+    
+    # データの分割
+    X_train, X_test, y_train, y_test = train_test_split(X_train_tfidf, df['label'], test_size=0.2, random_state=42)
+    
+    # モデルの学習
+    clf = MultinomialNB().fit(X_train, y_train)
+    
+    # モデルの評価
+    y_pred = clf.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)
+    st.write("モデルの正解率:", accuracy)
 
-# With ChaSen format
-# ChaSen のフォーマットで
-mecab_tagger = MeCab.Tagger('-Ochasen')
-text = 'これは日本語の形態素解析のテストです。動詞の形も一般化できるようになっています。'
-parsed = [chunk.split('\t') for chunk in mecab_tagger.parse(text).splitlines()[:-1]]
-# output = ['surface','reading','root-form','"part-of-speech"-"sub-class 1"-"sub-class 2"-"sub-class 3"','inflection','conjugation']
-# 出力 = ['表層形','読み','原形,'品詞-品詞細分類1-品詞細分類2-品詞細分類3',活用型,活用形']
-lemmatized = [i[2] for i in parsed]
+    
+    # テキストデータの統計情報
+    word_counts = X_train_counts.toarray().sum(axis=0)
+    words = count_vect.get_feature_names_out()
+    word_freq = pd.DataFrame({'word': words, 'count': word_counts}).sort_values(by='count', ascending=False)
+    
+    # ワードクラウドの作成と表示
+    wordcloud = WordCloud(width=800, height=400, background_color='white', colormap='viridis').generate_from_frequencies(dict(zip(words, word_counts)))
+    
+# グラフの表示  
+    fig, ax = plt.subplots()
+    word_freq.head(10).plot(kind='bar', x='word', y='count', ax=ax)
+    st.pyplot(fig)
 
-# >>> for i in parsed: print(i)
-# ...
-# ['これ', 'コレ', 'これ', '名詞-代名詞-一般', '', '']
-# ['は', 'ハ', 'は', '助詞-係助詞', '', '']
-# ['日本語', 'ニホンゴ', '日本語', '名詞-一般', '', '']
-# ['の', 'ノ', 'の', '助詞-連体化', '', '']
-# ['形態素', 'ケイタイソ', '形態素', '名詞-一般', '', '']
-# ['解析', 'カイセキ', '解析', '名詞-サ変接続', '', '']
-# ['の', 'ノ', 'の', '助詞-連体化', '', '']
-# ['テスト', 'テスト', 'テスト', '名詞-サ変接続', '', '']
-# ['です', 'デス', 'です', '助動詞', '特殊・デス', '基本形']
-# ['。', '。', '。', '記号-句点', '', '']
-# ['動詞', 'ドウシ', '動詞', '名詞-一般', '', '']
-# ['の', 'ノ', 'の', '助詞-連体化', '', '']
-# ['形', 'カタチ', '形', '名詞-一般', '', '']
-# ['も', 'モ', 'も', '助詞-係助詞', '', '']
-# ['一般', 'イッパン', '一般', '名詞-一般', '', '']
-# ['化', 'カ', '化', '名詞-接尾-サ変接続', '', '']
-# ['できる', 'デキル', 'できる', '動詞-自立', '一段', '基本形']
-# ['よう', 'ヨウ', 'よう', '名詞-非自立-助動詞語幹', '', '']
-# ['に', 'ニ', 'に', '助詞-格助詞-一般', '', '']
-# ['なっ', 'ナッ', 'なる', '動詞-自立', '五段・ラ行', '連用タ接続']
-# ['て', 'テ', 'て', '助詞-接続助詞', '', '']
-# ['い', 'イ', 'いる', '動詞-非自立', '一段', '連用形']
-# ['ます', 'マス', 'ます', '助動詞', '特殊・マス', '基本形']
-# ['。', '。', '。', '記号-句点', '', '']
+
+    plt.figure(figsize=(10, 5))
+    plt.imshow(wordcloud, interpolation='bilinear')
+    plt.axis('off')
+    
+    st.pyplot(plt)
+
+else:
+    # テキスト未アップロード時の処理
+    st.write("テキストファイルをアップロードしてください。")
